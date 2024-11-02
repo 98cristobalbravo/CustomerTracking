@@ -90,10 +90,6 @@ Contributions are what make the open-source community such an amazing place to l
 
 Distributed under the MIT License. See `LICENSE` for more information.
 
-## 📞 Contact
-
-Cristóbal Bravo - [@98cristobalbravo](https://github.com/98cristobalbravo)
-
 Project Link: [https://github.com/98cristobalbravo/CustomerTracking](https://github.com/98cristobalbravo/CustomerTracking)
 
 ## 🙏 Acknowledgements
@@ -105,4 +101,4 @@ Project Link: [https://github.com/98cristobalbravo/CustomerTracking](https://git
 
 ---
 
-Made with ❤️ by Cristóbal Bravo
+Made with ❤️ by Crxzzzzz...
