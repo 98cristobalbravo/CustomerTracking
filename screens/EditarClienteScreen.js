@@ -12,6 +12,8 @@ import {
 import { supabase } from "../api/supabaseClient";
 import Icon from "react-native-vector-icons/MaterialIcons";
 
+// The EditarClienteScreen component is similar to the ClientesScreen component, but it's used to edit a single client. It receives the client object as a prop and updates it in the database when the user submits the form. It also allows the user to delete the client.
+
 const EditarClienteScreen = ({ route, navigation }) => {
   const { cliente } = route.params;
   const [nombre, setNombre] = useState(cliente.name);
