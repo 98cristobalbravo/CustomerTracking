@@ -4,9 +4,8 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import HomeScreen from "./screens/HomeScreen";
 import ClientesScreen from "./screens/ClientesScreen";
-import AgregarClienteScreen from "./screens/AgregarClienteScreen";
-import EditarClienteScreen from "./screens/EditarClienteScreen";
 import ProductosScreen from "./screens/ProductosScreen";
+import PedidosScreen from "./screens/PedidosScreen";
 
 const Stack = createStackNavigator();
 
@@ -25,19 +24,14 @@ export default function App() {
           options={{ headerTitle: "Lista de Clientes" }}
         />
         <Stack.Screen
-          name="AgregarCliente"
-          component={AgregarClienteScreen}
-          options={{ headerTitle: "Agregar Cliente" }}
-        />
-        <Stack.Screen
-          name="EditarCliente"
-          component={EditarClienteScreen}
-          options={{ headerTitle: "Editar Cliente" }}
-        />
-        <Stack.Screen
           name="Productos"
           component={ProductosScreen}
           options={{ headerTitle: "Lista de Productos" }}
+        />
+        <Stack.Screen
+          name="Pedidos"
+          component={PedidosScreen}
+          options={{ headerTitle: "Pedidos del Día" }}
         />
       </Stack.Navigator>
     </NavigationContainer>

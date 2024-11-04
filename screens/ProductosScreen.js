@@ -2,16 +2,21 @@ import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
-  FlatList,
-  StyleSheet,
+  SectionList,
   Alert,
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
 import Icon from "react-native-vector-icons/MaterialIcons";
-import { supabase } from "../api/supabaseClient";
+import FormInput from "../components/FormInput";
+import {
+  fetchProducts,
+  addProduct,
+  updateProduct,
+  deleteProduct,
+} from "../api/databaseService";
+import globalStyles from "../styles/globalStyles";
 
 const ProductosScreen = () => {
   const [products, setProducts] = useState([]);
@@ -21,19 +26,35 @@ const ProductosScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchProducts = async () => {
+  const prepareProductsData = (data) => {
+    const sortedProducts = [...data].sort((a, b) =>
+      a.name.localeCompare(b.name, "es", { sensitivity: "base" })
+    );
+
+    const grouped = sortedProducts.reduce((acc, product) => {
+      const firstLetter = product.name.charAt(0).toUpperCase();
+      if (!acc[firstLetter]) {
+        acc[firstLetter] = [];
+      }
+      acc[firstLetter].push(product);
+      return acc;
+    }, {});
+
+    return Object.keys(grouped)
+      .sort()
+      .map((letter) => ({
+        title: letter,
+        data: grouped[letter],
+      }));
+  };
+
+  const loadProducts = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .order("name", { ascending: true });
-
-      if (error) throw error;
-      setProducts(data || []);
+      const data = await fetchProducts();
+      setProducts(prepareProductsData(data || []));
     } catch (error) {
       Alert.alert("Error", "No se pudieron cargar los productos");
-      console.error(error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -41,60 +62,51 @@ const ProductosScreen = () => {
   };
 
   useEffect(() => {
-    fetchProducts();
+    loadProducts();
   }, []);
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
-    fetchProducts();
+    loadProducts();
   }, []);
 
-  const addProduct = async () => {
-    if (!name || !price) {
+  const resetForm = () => {
+    setName("");
+    setPrice("");
+    setEditingProduct(null);
+  };
+
+  const handleAddProduct = async () => {
+    if (!name.trim() || !price.trim()) {
       Alert.alert("Error", "Por favor complete todos los campos");
       return;
     }
     try {
-      const { error } = await supabase
-        .from("products")
-        .insert([{ name, price: parseFloat(price) }]);
-      if (error) throw error;
-
-      setName("");
-      setPrice("");
+      await addProduct(name.trim(), price.trim());
+      resetForm();
       Alert.alert("Éxito", "Producto agregado correctamente");
-      fetchProducts();
+      loadProducts();
     } catch (error) {
       Alert.alert("Error", "No se pudo agregar el producto");
-      console.error(error);
     }
   };
 
-  const updateProduct = async () => {
-    if (!editingProduct || !name || !price) {
+  const handleUpdateProduct = async () => {
+    if (!editingProduct || !name.trim() || !price.trim()) {
       Alert.alert("Error", "Por favor complete todos los campos");
       return;
     }
     try {
-      const { error } = await supabase
-        .from("products")
-        .update({ name, price: parseFloat(price) })
-        .eq("id", editingProduct.id);
-
-      if (error) throw error;
-
-      setName("");
-      setPrice("");
-      setEditingProduct(null);
+      await updateProduct(editingProduct.id, name.trim(), price.trim());
+      resetForm();
       Alert.alert("Éxito", "Producto actualizado correctamente");
-      fetchProducts();
+      loadProducts();
     } catch (error) {
       Alert.alert("Error", "No se pudo actualizar el producto");
-      console.error(error);
     }
   };
 
-  const deleteProduct = async (id) => {
+  const handleDeleteProduct = async (id) => {
     Alert.alert(
       "Confirmar eliminación",
       "¿Está seguro que desea eliminar este producto?",
@@ -105,18 +117,11 @@ const ProductosScreen = () => {
           style: "destructive",
           onPress: async () => {
             try {
-              const { error } = await supabase
-                .from("products")
-                .delete()
-                .eq("id", id);
-
-              if (error) throw error;
-
+              await deleteProduct(id);
               Alert.alert("Éxito", "Producto eliminado correctamente");
-              fetchProducts();
+              loadProducts();
             } catch (error) {
               Alert.alert("Error", "No se pudo eliminar el producto");
-              console.error(error);
             }
           },
         },
@@ -126,32 +131,33 @@ const ProductosScreen = () => {
 
   const formatPrice = (price) => {
     if (typeof price !== "number") return price;
-
-    // Si el número no tiene decimales, mostrar sin decimales
-    if (Number.isInteger(price)) {
-      return price.toString();
-    }
-
-    // Si tiene decimales, mostrar solo si son necesarios
-    return price.toFixed(2).replace(/\.?0+$/, "");
+    return Number.isInteger(price)
+      ? price.toString()
+      : price.toFixed(2).replace(/\.?0+$/, "");
   };
 
+  const renderSectionHeader = ({ section: { title } }) => (
+    <View style={globalStyles.sectionHeader}>
+      <Text style={globalStyles.sectionHeaderText}>{title}</Text>
+    </View>
+  );
+
   const renderItem = ({ item }) => (
-    <View style={styles.productItem}>
-      <View style={styles.productHeader}>
-        <View style={styles.iconContainer}>
+    <View style={globalStyles.itemCard}>
+      <View style={globalStyles.itemHeader}>
+        <View style={globalStyles.iconContainer}>
           <Icon name="shopping-bag" size={24} color="#666" />
         </View>
-        <View style={styles.productInfo}>
-          <Text style={styles.productName}>{item.name}</Text>
-          <View style={styles.infoRow}>
+        <View style={globalStyles.itemInfo}>
+          <Text style={globalStyles.itemName}>{item.name}</Text>
+          <View style={globalStyles.infoRow}>
             <Icon name="attach-money" size={16} color="#666" />
-            <Text style={styles.infoText}>${formatPrice(item.price)}</Text>
+            <Text style={globalStyles.infoText}>{formatPrice(item.price)}</Text>
           </View>
         </View>
-        <View style={styles.actionButtons}>
+        <View style={globalStyles.actionButtons}>
           <TouchableOpacity
-            style={[styles.actionButton, styles.editButton]}
+            style={[globalStyles.actionButton, globalStyles.editButton]}
             onPress={() => {
               setName(item.name);
               setPrice(item.price.toString());
@@ -161,8 +167,8 @@ const ProductosScreen = () => {
             <Icon name="edit" size={20} color="#0066CC" />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.actionButton, styles.deleteButton]}
-            onPress={() => deleteProduct(item.id)}
+            style={[globalStyles.actionButton, globalStyles.deleteButton]}
+            onPress={() => handleDeleteProduct(item.id)}
           >
             <Icon name="delete" size={20} color="#FF3B30" />
           </TouchableOpacity>
@@ -173,169 +179,69 @@ const ProductosScreen = () => {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <View style={globalStyles.centered}>
         <ActivityIndicator size="large" color="#0066CC" />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.inputContainer}>
-        <TextInput
-          placeholder="Nombre del Producto"
+    <View style={globalStyles.container}>
+      <View style={globalStyles.inputContainer}>
+        <FormInput
+          placeholder="Nombre del producto"
           value={name}
           onChangeText={setName}
-          style={styles.input}
+          autoCapitalize="words"
         />
-        <TextInput
-          placeholder="Precio del Producto"
+        <FormInput
+          placeholder="Precio del producto"
           value={price}
           onChangeText={setPrice}
           keyboardType="numeric"
-          style={styles.input}
         />
         <TouchableOpacity
-          style={styles.submitButton}
-          onPress={editingProduct ? updateProduct : addProduct}
+          style={[
+            globalStyles.submitButton,
+            (!name.trim() || !price.trim()) && globalStyles.disabledButton,
+          ]}
+          onPress={editingProduct ? handleUpdateProduct : handleAddProduct}
+          disabled={!name.trim() || !price.trim()}
         >
-          <Text style={styles.submitButtonText}>
+          <Text style={globalStyles.submitButtonText}>
             {editingProduct ? "Actualizar Producto" : "Agregar Producto"}
           </Text>
         </TouchableOpacity>
+        {editingProduct && (
+          <TouchableOpacity
+            style={globalStyles.cancelButton}
+            onPress={resetForm}
+          >
+            <Text style={globalStyles.cancelButtonText}>Cancelar Edición</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      <FlatList
-        data={products}
+      <SectionList
+        sections={products}
         renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
         keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={globalStyles.list}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No hay productos registrados</Text>
+          <View style={globalStyles.emptyContainer}>
+            <Text style={globalStyles.emptyText}>
+              No hay productos registrados
+            </Text>
           </View>
         }
+        stickySectionHeadersEnabled
       />
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-  },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  inputContainer: {
-    backgroundColor: "#fff",
-    padding: 16,
-    margin: 16,
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  input: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    fontSize: 16,
-  },
-  submitButton: {
-    backgroundColor: "#0066CC",
-    padding: 16,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  submitButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  list: {
-    padding: 16,
-  },
-  productItem: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  productHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#f0f0f0",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  productInfo: {
-    flex: 1,
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
-  },
-  infoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 4,
-  },
-  infoText: {
-    fontSize: 14,
-    color: "#666",
-    marginLeft: 8,
-  },
-  actionButtons: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  actionButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 8,
-  },
-  editButton: {
-    backgroundColor: "#E5F1FF",
-  },
-  deleteButton: {
-    backgroundColor: "#FFE5E5",
-  },
-  emptyContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 32,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: "#666",
-    textAlign: "center",
-  },
-});
 
 export default ProductosScreen;

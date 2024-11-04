@@ -2,17 +2,22 @@ import React, { useState } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
-  FlatList,
-  StyleSheet,
+  SectionList,
   Alert,
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import Icon from "react-native-vector-icons/MaterialIcons";
-import { supabase } from "../api/supabaseClient";
+import {
+  fetchClientes,
+  addClient,
+  updateClient,
+  deleteClient,
+} from "../api/clienteService";
+import FormInput from "../components/FormInput";
+import globalStyles from "../styles/globalStyles";
 
 const ClientesScreen = () => {
   const [clientes, setClientes] = useState([]);
@@ -22,85 +27,129 @@ const ClientesScreen = () => {
   const [editingClient, setEditingClient] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fetch clients from Supabase
-  const fetchClientes = async () => {
+  const prepareClientesData = (data) => {
+    const sortedClientes = [...data].sort((a, b) =>
+      a.name.localeCompare(b.name, "es", { sensitivity: "base" })
+    );
+
+    const grouped = sortedClientes.reduce((acc, client) => {
+      const firstLetter = client.name.charAt(0).toUpperCase();
+      if (!acc[firstLetter]) {
+        acc[firstLetter] = [];
+      }
+      acc[firstLetter].push(client);
+      return acc;
+    }, {});
+
+    return Object.keys(grouped)
+      .sort()
+      .map((letter) => ({
+        title: letter,
+        data: grouped[letter],
+      }));
+  };
+
+  const loadClientes = async (showError = true) => {
     try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("customers")
-        .select("*")
-        .order("name", { ascending: true });
-
-      if (error) throw error;
-      setClientes(data || []);
+      const data = await fetchClientes();
+      setClientes(prepareClientesData(data));
     } catch (error) {
-      Alert.alert("Error", "No se pudieron cargar los clientes");
-      console.error(error);
+      if (showError) {
+        Alert.alert("Error", "No se pudieron cargar los clientes");
+      }
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
   useFocusEffect(
     React.useCallback(() => {
-      fetchClientes();
+      loadClientes(false);
     }, [])
   );
 
-  const onRefresh = React.useCallback(() => {
+  const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
-    fetchClientes();
+    await loadClientes();
+    setRefreshing(false);
   }, []);
 
-  // Add a new client
-  const addClient = async () => {
-    if (!name) {
-      Alert.alert("Error", "Por favor ingrese al menos el nombre del cliente");
-      return;
+  const resetForm = () => {
+    setName("");
+    setPhone("");
+    setAddress("");
+    setEditingClient(null);
+  };
+
+  const validateFields = () => {
+    if (!name.trim() || !phone.trim() || !address.trim()) {
+      Alert.alert(
+        "Error",
+        "Por favor complete todos los campos (nombre, teléfono y dirección)"
+      );
+      return false;
     }
+    return true;
+  };
 
+  const handleAddClient = async () => {
+    if (!validateFields() || isSubmitting) return;
+
+    setIsSubmitting(true);
     try {
-      const { error } = await supabase
-        .from("customers")
-        .insert([{ name, phone, address }]);
-
-      if (error) throw error;
-      resetForm();
-      Alert.alert("Éxito", "Cliente agregado correctamente");
-      fetchClientes();
+      await addClient(name.trim(), phone.trim(), address.trim());
+      Alert.alert("Éxito", "Cliente agregado correctamente", [
+        {
+          text: "OK",
+          onPress: () => {
+            resetForm();
+            loadClientes(false);
+          },
+        },
+      ]);
     } catch (error) {
-      Alert.alert("Error", "No se pudo agregar el cliente");
-      console.error(error);
+      if (error.code === "23505") {
+        Alert.alert("Error", "El número de teléfono ya está registrado.");
+      } else {
+        Alert.alert("Error", "No se pudo agregar el cliente");
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // Update an existing client entry
-  const updateClient = async () => {
-    if (!editingClient || !name) {
-      Alert.alert("Error", "Por favor ingrese al menos el nombre del cliente");
-      return;
-    }
+  const handleUpdateClient = async () => {
+    if (!editingClient || !validateFields() || isSubmitting) return;
 
+    setIsSubmitting(true);
     try {
-      const { error } = await supabase
-        .from("customers")
-        .update({ name, phone, address })
-        .eq("id", editingClient.id);
-
-      if (error) throw error;
-      resetForm();
-      Alert.alert("Éxito", "Cliente actualizado correctamente");
-      fetchClientes();
+      await updateClient(
+        editingClient.id,
+        name.trim(),
+        phone.trim(),
+        address.trim()
+      );
+      Alert.alert("Éxito", "Cliente actualizado correctamente", [
+        {
+          text: "OK",
+          onPress: () => {
+            resetForm();
+            loadClientes(false);
+          },
+        },
+      ]);
     } catch (error) {
       Alert.alert("Error", "No se pudo actualizar el cliente");
-      console.error(error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // Delete a client
-  const deleteClient = async (id) => {
+  const handleDeleteClient = async (id) => {
+    if (isSubmitting) return;
+
     Alert.alert(
       "Confirmar eliminación",
       "¿Está seguro que desea eliminar este cliente?",
@@ -110,18 +159,19 @@ const ClientesScreen = () => {
           text: "Eliminar",
           style: "destructive",
           onPress: async () => {
+            setIsSubmitting(true);
             try {
-              const { error } = await supabase
-                .from("customers")
-                .delete()
-                .eq("id", id);
-
-              if (error) throw error;
-              Alert.alert("Éxito", "Cliente eliminado correctamente");
-              fetchClientes();
+              await deleteClient(id);
+              Alert.alert("Éxito", "Cliente eliminado correctamente", [
+                {
+                  text: "OK",
+                  onPress: () => loadClientes(false),
+                },
+              ]);
             } catch (error) {
               Alert.alert("Error", "No se pudo eliminar el cliente");
-              console.error(error);
+            } finally {
+              setIsSubmitting(false);
             }
           },
         },
@@ -129,49 +179,46 @@ const ClientesScreen = () => {
     );
   };
 
-  const resetForm = () => {
-    setName("");
-    setPhone("");
-    setAddress("");
-    setEditingClient(null);
-  };
+  const renderSectionHeader = ({ section: { title } }) => (
+    <View style={globalStyles.sectionHeader}>
+      <Text style={globalStyles.sectionHeaderText}>{title}</Text>
+    </View>
+  );
 
   const renderItem = ({ item }) => (
-    <View style={styles.clientItem}>
-      <View style={styles.clientHeader}>
-        <View style={styles.iconContainer}>
+    <View style={globalStyles.itemCard}>
+      <View style={globalStyles.itemHeader}>
+        <View style={globalStyles.iconContainer}>
           <Icon name="person" size={24} color="#666" />
         </View>
-        <View style={styles.clientInfo}>
-          <Text style={styles.clientName}>{item.name}</Text>
-          {item.phone && (
-            <View style={styles.infoRow}>
-              <Icon name="phone" size={16} color="#666" />
-              <Text style={styles.infoText}>{item.phone}</Text>
-            </View>
-          )}
-          {item.address && (
-            <View style={styles.infoRow}>
-              <Icon name="place" size={16} color="#666" />
-              <Text style={styles.infoText}>{item.address}</Text>
-            </View>
-          )}
+        <View style={globalStyles.itemInfo}>
+          <Text style={globalStyles.itemName}>{item.name}</Text>
+          <View style={globalStyles.infoRow}>
+            <Icon name="phone" size={16} color="#666" />
+            <Text style={globalStyles.infoText}>{item.phone}</Text>
+          </View>
+          <View style={globalStyles.infoRow}>
+            <Icon name="place" size={16} color="#666" />
+            <Text style={globalStyles.infoText}>{item.address}</Text>
+          </View>
         </View>
-        <View style={styles.actionButtons}>
+        <View style={globalStyles.actionButtons}>
           <TouchableOpacity
-            style={[styles.actionButton, styles.editButton]}
+            style={[globalStyles.actionButton, globalStyles.editButton]}
             onPress={() => {
               setName(item.name);
               setPhone(item.phone || "");
               setAddress(item.address || "");
               setEditingClient(item);
             }}
+            disabled={isSubmitting}
           >
             <Icon name="edit" size={20} color="#0066CC" />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.actionButton, styles.deleteButton]}
-            onPress={() => deleteClient(item.id)}
+            style={[globalStyles.actionButton, globalStyles.deleteButton]}
+            onPress={() => handleDeleteClient(item.id)}
+            disabled={isSubmitting}
           >
             <Icon name="delete" size={20} color="#FF3B30" />
           </TouchableOpacity>
@@ -182,169 +229,89 @@ const ClientesScreen = () => {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <View style={globalStyles.centered}>
         <ActivityIndicator size="large" color="#0066CC" />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.inputContainer}>
-        <TextInput
+    <View style={globalStyles.container}>
+      <View style={globalStyles.inputContainer}>
+        <FormInput
           placeholder="Nombre del Cliente"
           value={name}
           onChangeText={setName}
-          style={styles.input}
+          autoCapitalize="words"
+          editable={!isSubmitting}
         />
-        <TextInput
+        <FormInput
           placeholder="Teléfono"
           value={phone}
           onChangeText={setPhone}
           keyboardType="phone-pad"
-          style={styles.input}
+          editable={!isSubmitting}
         />
-        <TextInput
+        <FormInput
           placeholder="Dirección"
           value={address}
           onChangeText={setAddress}
-          style={styles.input}
+          multiline
+          editable={!isSubmitting}
         />
         <TouchableOpacity
-          style={styles.submitButton}
-          onPress={editingClient ? updateClient : addClient}
+          style={[
+            globalStyles.submitButton,
+            (isSubmitting ||
+              !name.trim() ||
+              !phone.trim() ||
+              !address.trim()) &&
+              globalStyles.disabledButton,
+          ]}
+          onPress={editingClient ? handleUpdateClient : handleAddClient}
+          disabled={
+            isSubmitting || !name.trim() || !phone.trim() || !address.trim()
+          }
         >
-          <Text style={styles.submitButtonText}>
+          <Text style={globalStyles.submitButtonText}>
             {editingClient ? "Actualizar Cliente" : "Agregar Cliente"}
           </Text>
         </TouchableOpacity>
+        {editingClient && (
+          <TouchableOpacity
+            style={globalStyles.cancelButton}
+            onPress={resetForm}
+            disabled={isSubmitting}
+          >
+            <Text style={globalStyles.cancelButtonText}>Cancelar Edición</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      <FlatList
-        data={clientes}
+      <SectionList
+        sections={clientes}
         renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
         keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={globalStyles.list}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onPress={onRefresh}
+            enabled={!isSubmitting}
+          />
         }
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No hay clientes registrados</Text>
+          <View style={globalStyles.emptyContainer}>
+            <Text style={globalStyles.emptyText}>
+              No hay clientes registrados
+            </Text>
           </View>
         }
+        stickySectionHeadersEnabled
       />
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-  },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  inputContainer: {
-    backgroundColor: "#fff",
-    padding: 16,
-    margin: 16,
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  input: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    fontSize: 16,
-  },
-  submitButton: {
-    backgroundColor: "#0066CC",
-    padding: 16,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  submitButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  list: {
-    padding: 16,
-  },
-  clientItem: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  clientHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#f0f0f0",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  clientInfo: {
-    flex: 1,
-  },
-  clientName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
-  },
-  infoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 4,
-  },
-  infoText: {
-    fontSize: 14,
-    color: "#666",
-    marginLeft: 4,
-  },
-  actionButtons: {
-    flexDirection: "row",
-  },
-  actionButton: {
-    padding: 8,
-    borderRadius: 8,
-    marginLeft: 4,
-  },
-  editButton: {
-    backgroundColor: "#E3F2FD",
-  },
-  deleteButton: {
-    backgroundColor: "#FFEBEE",
-  },
-  emptyContainer: {
-    padding: 16,
-    alignItems: "center",
-  },
-  emptyText: {
-    fontSize: 16,
-    color: "#999",
-  },
-});
 
 export default ClientesScreen;

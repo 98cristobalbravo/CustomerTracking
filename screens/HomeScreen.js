@@ -1,3 +1,4 @@
+// HomeScreen.js
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useNavigation } from "@react-navigation/native";
@@ -20,7 +21,7 @@ const HomeScreen = () => {
         <CustomButton
           title="Pedidos"
           iconName="list"
-          onPress={() => navigation.navigate("Orders")} // Asegúrate de que la pantalla "Orders" esté definida
+          onPress={() => navigation.navigate("Pedidos")} // Cambia "Orders" por "Pedidos"
           style={buttonStyles.buttonSpacing}
         />
         <CustomButton
