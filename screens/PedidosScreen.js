@@ -1,686 +1,413 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   FlatList,
   Modal,
-  Alert,
-  ActivityIndicator,
-  RefreshControl,
+  TextInput,
   StyleSheet,
-  SectionList,
-  Animated,
+  Alert,
+  SafeAreaView,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import Icon from "react-native-vector-icons/MaterialIcons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Share } from "react-native";
 import { fetchClientes } from "../api/clienteService";
 import { fetchProductos } from "../api/productoService";
-import { useTheme } from "@react-navigation/native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import ViewShot from "react-native-view-shot";
-import * as FileSystem from "expo-file-system";
-import * as Sharing from "expo-sharing";
+import { createOrder } from "../api/orderService";
 
-const ClienteItem = React.memo(({ item, onSelectCliente }) => {
-  const { colors } = useTheme();
-  return (
-    <TouchableOpacity
-      style={[styles.clienteItem, { borderBottomColor: colors.border }]}
-      onPress={() => onSelectCliente(item)}
-    >
-      <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
-        <Icon name="person" size={24} color={colors.background} />
-      </View>
-      <View style={styles.clienteInfo}>
-        <Text style={[styles.clienteName, { color: colors.text }]}>
-          {item.name}
-        </Text>
-        <Text style={[styles.clientePhone, { color: colors.text }]}>
-          {item.phone}
-        </Text>
-        <Text style={[styles.clienteAddress, { color: colors.text }]}>
-          {item.address}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
-});
-
-const ProductoItem = React.memo(({ item, onAgregarProducto }) => {
-  const { colors } = useTheme();
-  return (
-    <TouchableOpacity
-      style={[styles.productoItem, { borderBottomColor: colors.border }]}
-      onPress={() => onAgregarProducto(item)}
-    >
-      <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
-        <Icon name="shopping-bag" size={24} color={colors.background} />
-      </View>
-      <View style={styles.productoInfo}>
-        <Text style={[styles.productoName, { color: colors.text }]}>
-          {item.name}
-        </Text>
-        <Text style={[styles.productoPrice, { color: colors.primary }]}>
-          ${item.price}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
-});
-
-const PedidoItem = React.memo(({ item, onVerDetalles }) => {
-  const { colors } = useTheme();
-  const total = item.productos.reduce(
-    (sum, producto) => sum + producto.price * producto.cantidad,
-    0
-  );
-
-  return (
-    <TouchableOpacity
-      style={[styles.pedidoItem, { backgroundColor: colors.card }]}
-      onPress={() => onVerDetalles(item)}
-    >
-      <View style={styles.pedidoHeader}>
-        <Text style={[styles.pedidoCliente, { color: colors.text }]}>
-          {item.cliente}
-        </Text>
-        <Text style={[styles.pedidoTotal, { color: colors.primary }]}>
-          ${total.toFixed(2)}
-        </Text>
-      </View>
-      <Text style={[styles.pedidoFecha, { color: colors.text }]}>
-        {item.fecha}
-      </Text>
-      <Text style={[styles.pedidoDireccion, { color: colors.text }]}>
-        {item.direccion}
-      </Text>
-      <Text
-        style={[
-          styles.pedidoProductos,
-          { color: item.productos.length === 0 ? colors.error : colors.text },
-        ]}
-      >
-        {item.productos.length === 0
-          ? "Agregar productos..."
-          : `${item.productos.length} productos`}
-      </Text>
-      {item.productos.length > 0 && (
-        <View style={styles.productosPreview}>
-          {item.productos.slice(0, 3).map((producto, index) => (
-            <Text
-              key={index}
-              style={[styles.productoPreview, { color: colors.text }]}
-            >
-              • {producto.name} (x{producto.cantidad})
-            </Text>
-          ))}
-          {item.productos.length > 3 && (
-            <Text style={[styles.productoPreview, { color: colors.text }]}>
-              ...
-            </Text>
-          )}
-        </View>
-      )}
-      <View style={styles.paymentMethodContainer}>
-        <TouchableOpacity
-          style={[
-            styles.paymentMethodButton,
-            item.paymentMethod === "efectivo" &&
-              styles.paymentMethodButtonActive,
-            { borderColor: colors.border },
-          ]}
-          onPress={() => item.setPaymentMethod("efectivo")}
-        >
-          <Text
-            style={[
-              styles.paymentMethodText,
-              {
-                color:
-                  item.paymentMethod === "efectivo"
-                    ? colors.primary
-                    : colors.text,
-              },
-            ]}
-          >
-            Efectivo
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.paymentMethodButton,
-            item.paymentMethod === "tarjeta" &&
-              styles.paymentMethodButtonActive,
-            { borderColor: colors.border },
-          ]}
-          onPress={() => item.setPaymentMethod("tarjeta")}
-        >
-          <Text
-            style={[
-              styles.paymentMethodText,
-              {
-                color:
-                  item.paymentMethod === "tarjeta"
-                    ? colors.primary
-                    : colors.text,
-              },
-            ]}
-          >
-            Tarjeta
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.paymentMethodButton,
-            item.paymentMethod === "otro" && styles.paymentMethodButtonActive,
-            { borderColor: colors.border },
-          ]}
-          onPress={() => item.setPaymentMethod("otro")}
-        >
-          <Text
-            style={[
-              styles.paymentMethodText,
-              {
-                color:
-                  item.paymentMethod === "otro" ? colors.primary : colors.text,
-              },
-            ]}
-          >
-            Otro
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
-});
-
-export default function Component() {
-  const { colors } = useTheme();
-  const [pedidos, setPedidos] = useState([]);
+export default function PedidosScreen() {
   const [clientes, setClientes] = useState([]);
   const [productos, setProductos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [pedidoActual, setPedidoActual] = useState({ clientes: [] });
   const [modalVisible, setModalVisible] = useState(false);
-  const [modalType, setModalType] = useState(null);
-  const [selectedPedido, setSelectedPedido] = useState(null);
-  const [fadeAnim] = useState(new Animated.Value(0));
-  const [scaleAnim] = useState(new Animated.Value(0.9));
-  const viewShotRef = useRef(null);
+  const [modalType, setModalType] = useState("");
+  const [busqueda, setBusqueda] = useState("");
 
-  const loadData = useCallback(async () => {
+  useEffect(() => {
+    cargarDatos();
+    cargarPedidoGuardado();
+  }, []);
+
+  useEffect(() => {
+    guardarPedido();
+  }, [pedidoActual]);
+
+  const cargarDatos = async () => {
     try {
-      setLoading(true);
-      const [clientesData, productosData, storedPedidos] = await Promise.all([
+      const [clientesData, productosData] = await Promise.all([
         fetchClientes(),
         fetchProductos(),
-        AsyncStorage.getItem("pedidos"),
       ]);
-      setClientes(prepareClientesData(clientesData));
+      setClientes(clientesData);
       setProductos(productosData);
-      if (storedPedidos) {
-        setPedidos(JSON.parse(storedPedidos));
+    } catch (error) {
+      Alert.alert("Error", "No se pudieron cargar los datos");
+    }
+  };
+
+  const cargarPedidoGuardado = async () => {
+    try {
+      const pedidoGuardado = await AsyncStorage.getItem("pedidoActual");
+      if (pedidoGuardado) {
+        setPedidoActual(JSON.parse(pedidoGuardado));
       }
     } catch (error) {
-      console.error("Error al cargar los datos:", error);
-      Alert.alert(
-        "Error",
-        "No se pudieron cargar los datos. Por favor, intente de nuevo."
-      );
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      console.error("Error al cargar el pedido guardado:", error);
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  useEffect(() => {
-    const savePedidos = async () => {
-      try {
-        await AsyncStorage.setItem("pedidos", JSON.stringify(pedidos));
-      } catch (error) {
-        console.error("Error al guardar los pedidos:", error);
-      }
-    };
-    savePedidos();
-  }, [pedidos]);
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    loadData();
-  }, [loadData]);
-
-  const prepareClientesData = useCallback((data) => {
-    const sortedClientes = [...data].sort((a, b) =>
-      a.name.localeCompare(b.name, "es", { sensitivity: "base" })
-    );
-
-    const grouped = sortedClientes.reduce((acc, client) => {
-      const firstLetter = client.name.charAt(0).toUpperCase();
-      if (!acc[firstLetter]) {
-        acc[firstLetter] = [];
-      }
-      acc[firstLetter].push(client);
-      return acc;
-    }, {});
-
-    return Object.keys(grouped)
-      .sort()
-      .map((letter) => ({
-        title: letter,
-        data: grouped[letter],
-      }));
-  }, []);
-
-  const agregarPedido = useCallback((cliente) => {
-    const fecha = new Date().toLocaleDateString();
-    setPedidos((prevPedidos) => [
-      ...prevPedidos,
-      {
-        cliente: cliente.name,
-        productos: [],
-        fecha: fecha,
-        direccion: cliente.address || "Dirección no especificada",
-        paymentMethod: null,
-        setPaymentMethod: (method) => {
-          setPedidos((prevPedidos) =>
-            prevPedidos.map((p) =>
-              p.cliente === cliente.name ? { ...p, paymentMethod: method } : p
-            )
-          );
-        },
-      },
-    ]);
-    setModalVisible(false);
-    Alert.alert("Éxito", "Cliente agregado al pedido correctamente");
-  }, []);
-
-  const agregarProducto = useCallback(
-    (producto) => {
-      if (selectedPedido) {
-        setPedidos((prevPedidos) => {
-          const index = prevPedidos.findIndex((p) => p === selectedPedido);
-          if (index !== -1) {
-            const newPedidos = [...prevPedidos];
-            const existingProductIndex = newPedidos[index].productos.findIndex(
-              (p) => p.id === producto.id
-            );
-            if (existingProductIndex !== -1) {
-              newPedidos[index].productos[existingProductIndex].cantidad += 1;
-            } else {
-              newPedidos[index].productos.push({ ...producto, cantidad: 1 });
-            }
-            return newPedidos;
-          }
-          return prevPedidos;
-        });
-        Alert.alert("Éxito", "Producto agregado al pedido");
-      }
-    },
-    [selectedPedido]
-  );
-
-  const actualizarCantidadProducto = useCallback(
-    (productoIndex, nuevaCantidad) => {
-      if (selectedPedido) {
-        setPedidos((prevPedidos) => {
-          const index = prevPedidos.findIndex((p) => p === selectedPedido);
-          if (index !== -1) {
-            const newPedidos = [...prevPedidos];
-            newPedidos[index].productos[productoIndex].cantidad = Math.max(
-              1,
-              nuevaCantidad
-            );
-            return newPedidos;
-          }
-          return prevPedidos;
-        });
-      }
-    },
-    [selectedPedido]
-  );
-
-  const eliminarProducto = useCallback(
-    (productoIndex) => {
-      if (selectedPedido) {
-        setPedidos((prevPedidos) => {
-          const index = prevPedidos.findIndex((p) => p === selectedPedido);
-          if (index !== -1) {
-            const newPedidos = [...prevPedidos];
-            newPedidos[index].productos.splice(productoIndex, 1);
-            return newPedidos;
-          }
-          return prevPedidos;
-        });
-        Alert.alert("Éxito", "Producto eliminado del pedido");
-      }
-    },
-    [selectedPedido]
-  );
-
-  const eliminarPedido = useCallback(
-    (pedidoAEliminar) => {
-      setPedidos((prevPedidos) =>
-        prevPedidos.filter((pedido) => pedido !== pedidoAEliminar)
-      );
-      hideModal();
-      Alert.alert("Éxito", "Pedido eliminado correctamente");
-    },
-    [hideModal]
-  );
-
-  const renderSectionHeader = useCallback(
-    ({ section: { title } }) => (
-      <View
-        style={[styles.sectionHeader, { backgroundColor: colors.background }]}
-      >
-        <Text style={[styles.sectionHeaderText, { color: colors.text }]}>
-          {title}
-        </Text>
-      </View>
-    ),
-    [colors]
-  );
-
-  const showModal = useCallback(
-    (type, pedido = null) => {
-      setModalType(type);
-      setSelectedPedido(pedido);
-      setModalVisible(true);
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          friction: 5,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    },
-    [fadeAnim, scaleAnim]
-  );
-
-  const hideModal = useCallback(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 0.9,
-        friction: 5,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      setModalVisible(false);
-      setModalType(null);
-      setSelectedPedido(null);
-    });
-  }, [fadeAnim, scaleAnim]);
-
-  const captureAndShareImage = useCallback(async () => {
+  const guardarPedido = async () => {
     try {
-      console.log("Iniciando captura de imagen...");
-      const uri = await viewShotRef.current.capture();
-      console.log("Imagen capturada:", uri);
+      await AsyncStorage.setItem("pedidoActual", JSON.stringify(pedidoActual));
+    } catch (error) {
+      console.error("Error al guardar el pedido:", error);
+    }
+  };
 
-      if (!uri) {
-        throw new Error("La captura de imagen falló: URI vacía");
+  const formatPrice = (price) => {
+    return "$ " + price.toLocaleString("es-CL");
+  };
+
+  const agregarClienteAPedido = (cliente) => {
+    if (pedidoActual.clientes.some((c) => c.id === cliente.id)) {
+      Alert.alert(
+        "Cliente ya agregado",
+        "Este cliente ya está en el pedido actual."
+      );
+      return;
+    }
+    setPedidoActual((prevPedido) => ({
+      ...prevPedido,
+      clientes: [...prevPedido.clientes, { ...cliente, productos: [] }],
+    }));
+    setModalVisible(false);
+  };
+
+  const eliminarClienteDePedido = (clienteId) => {
+    setPedidoActual((prevPedido) => ({
+      ...prevPedido,
+      clientes: prevPedido.clientes.filter(
+        (cliente) => cliente.id !== clienteId
+      ),
+    }));
+  };
+
+  const agregarProductoACliente = (clienteIndex, producto) => {
+    setPedidoActual((prevPedido) => {
+      const nuevosPedidos = [...prevPedido.clientes];
+      const clienteActual = nuevosPedidos[clienteIndex];
+      const productoExistente = clienteActual.productos.find(
+        (p) => p.id === producto.id
+      );
+
+      if (productoExistente) {
+        productoExistente.cantidad += 1;
+      } else {
+        clienteActual.productos.push({ ...producto, cantidad: 1 });
       }
 
-      const currentDate = new Date().toLocaleDateString();
-      const fileName = `Pedidos_${currentDate.replace(/\//g, "-")}.jpg`;
-      const filePath = `${FileSystem.cacheDirectory}${fileName}`;
+      Alert.alert(
+        "Producto Agregado",
+        `Se agregó "${producto.name}" al pedido de ${clienteActual.name}`,
+        [{ text: "Aceptar" }]
+      );
 
-      await FileSystem.copyAsync({
-        from: uri,
-        to: filePath,
-      });
+      return { ...prevPedido, clientes: nuevosPedidos };
+    });
+  };
 
-      console.log("Imagen copiada a:", filePath);
+  const eliminarProductoDeCliente = (clienteIndex, productoIndex) => {
+    setPedidoActual((prevPedido) => {
+      const nuevosPedidos = [...prevPedido.clientes];
+      nuevosPedidos[clienteIndex].productos.splice(productoIndex, 1);
+      return { ...prevPedido, clientes: nuevosPedidos };
+    });
+  };
 
-      if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert(
-          "Error",
-          "El compartir no está disponible en este dispositivo"
+  const actualizarCantidadProducto = (
+    clienteIndex,
+    productoIndex,
+    nuevaCantidad
+  ) => {
+    setPedidoActual((prevPedido) => {
+      const nuevosPedidos = [...prevPedido.clientes];
+      nuevosPedidos[clienteIndex].productos[productoIndex].cantidad = Math.max(
+        1,
+        nuevaCantidad
+      );
+      return { ...prevPedido, clientes: nuevosPedidos };
+    });
+  };
+
+  const calcularTotalPedido = () => {
+    return pedidoActual.clientes.reduce((total, cliente) => {
+      return (
+        total +
+        cliente.productos.reduce((subtotal, producto) => {
+          return subtotal + producto.price * producto.cantidad;
+        }, 0)
+      );
+    }, 0);
+  };
+
+  const compartirPedido = async () => {
+    const pedidoTexto = pedidoActual.clientes
+      .map((cliente) => {
+        const productosCliente = cliente.productos
+          .map(
+            (p) =>
+              `${p.name} x${p.cantidad} - ${formatPrice(p.price * p.cantidad)}`
+          )
+          .join("\n");
+        const totalCliente = cliente.productos.reduce(
+          (total, p) => total + p.price * p.cantidad,
+          0
         );
+        return `Cliente: ${cliente.name}\nDirección: ${
+          cliente.address
+        }\nProductos:\n${productosCliente}\nTotal: ${formatPrice(
+          totalCliente
+        )}\n`;
+      })
+      .join("\n");
+
+    const mensaje = `Pedido del día ${new Date().toLocaleDateString()}:\n\n${pedidoTexto}\nTotal del pedido: ${formatPrice(
+      calcularTotalPedido()
+    )}`;
+
+    try {
+      await Share.share({ message: mensaje });
+    } catch (error) {
+      Alert.alert("Error", "No se pudo compartir el pedido");
+    }
+  };
+
+  const finalizarPedido = async () => {
+    try {
+      if (pedidoActual.clientes.length === 0) {
+        Alert.alert("Error", "No hay clientes en el pedido actual");
         return;
       }
 
-      await Sharing.shareAsync(filePath, {
-        mimeType: "image/jpeg",
-        dialogTitle: "Compartir Pedidos",
-        UTI: "public.jpeg",
-      });
+      const orderData = {
+        customer_id: pedidoActual.clientes[0].id,
+        order_items: pedidoActual.clientes[0].productos.map((producto) => ({
+          product_id: producto.id,
+          quantity: producto.cantidad,
+          subtotal: producto.price * producto.cantidad,
+        })),
+        total: calcularTotalPedido(),
+        payment_method: "efectivo", // You might want to add a payment method selection in the UI
+      };
 
-      console.log("Imagen compartida exitosamente");
+      const savedOrder = await createOrder(orderData);
+
+      if (savedOrder) {
+        await compartirPedido();
+        setPedidoActual({ clientes: [] });
+        Alert.alert("Éxito", "Pedido guardado y compartido correctamente");
+      } else {
+        throw new Error("No se pudo guardar el pedido");
+      }
     } catch (error) {
-      console.error("Error al capturar o compartir imagen:", error);
-      Alert.alert("Error", `No se pudo compartir la imagen: ${error.message}`);
+      console.error("Error al finalizar el pedido:", error);
+      Alert.alert("Error", "No se pudo finalizar el pedido");
     }
-  }, []);
+  };
 
-  const renderModal = () => (
-    <Modal
-      animationType="none"
-      transparent={true}
-      visible={modalVisible}
-      onRequestClose={hideModal}
+  const renderClienteItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.clienteItem}
+      onPress={() => agregarClienteAPedido(item)}
     >
-      <View
-        style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: "rgba(0, 0, 0, 0.5)" },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.modalContainer,
-          {
-            opacity: fadeAnim,
-            transform: [{ scale: scaleAnim }],
-          },
-        ]}
-      >
-        <View
-          style={[styles.modalView, { backgroundColor: colors.background }]}
-        >
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>
-              {modalType === "clientes"
-                ? "Seleccionar Cliente"
-                : modalType === "productos"
-                ? "Agregar Producto"
-                : modalType === "detallesPedido"
-                ? "Detalles del Pedido"
-                : ""}
-            </Text>
-            <TouchableOpacity style={styles.closeButton} onPress={hideModal}>
-              <Icon name="close" size={24} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-          {modalType === "clientes" && (
-            <SectionList
-              sections={clientes}
-              renderItem={({ item }) => (
-                <ClienteItem item={item} onSelectCliente={agregarPedido} />
-              )}
-              renderSectionHeader={renderSectionHeader}
-              keyExtractor={(item) => item.id.toString()}
-            />
-          )}
-          {modalType === "productos" && (
-            <FlatList
-              data={productos}
-              renderItem={({ item }) => (
-                <ProductoItem item={item} onAgregarProducto={agregarProducto} />
-              )}
-              keyExtractor={(item) => item.id.toString()}
-            />
-          )}
-          {modalType === "detallesPedido" && selectedPedido && (
-            <View>
-              <View style={styles.clienteHeaderContainer}>
-                <Text
-                  style={[styles.pedidoClienteName, { color: colors.text }]}
-                >
-                  {selectedPedido.cliente}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => eliminarPedido(selectedPedido)}
-                >
-                  <Icon name="delete" size={24} color={colors.error} />
-                </TouchableOpacity>
-              </View>
-              <FlatList
-                data={selectedPedido.productos}
-                renderItem={({ item, index }) => (
-                  <View
-                    style={[
-                      styles.productoEnPedido,
-                      { borderBottomColor: colors.border },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.productoEnPedidoName,
-                        { color: colors.text },
-                      ]}
-                    >
-                      {item.name}
-                    </Text>
-                    <View style={styles.cantidadContainer}>
-                      <TouchableOpacity
-                        onPress={() =>
-                          actualizarCantidadProducto(index, item.cantidad - 1)
-                        }
-                      >
-                        <Icon name="remove" size={24} color={colors.primary} />
-                      </TouchableOpacity>
-                      <Text style={[styles.cantidad, { color: colors.text }]}>
-                        {item.cantidad}
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() =>
-                          actualizarCantidadProducto(index, item.cantidad + 1)
-                        }
-                      >
-                        <Icon name="add" size={24} color={colors.primary} />
-                      </TouchableOpacity>
-                    </View>
-                    <TouchableOpacity onPress={() => eliminarProducto(index)}>
-                      <Icon name="delete" size={24} color={colors.error} />
-                    </TouchableOpacity>
-                  </View>
-                )}
-                keyExtractor={(item, index) => index.toString()}
-              />
-              <TouchableOpacity
-                style={[
-                  styles.agregarProductoButton,
-                  { backgroundColor: colors.primary },
-                ]}
-                onPress={() => {
-                  setModalType("productos");
-                }}
-              >
-                <Text
-                  style={[
-                    styles.agregarProductoButtonText,
-                    { color: colors.background },
-                  ]}
-                >
-                  Agregar Producto
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      </Animated.View>
-    </Modal>
+      <Text style={styles.clienteName}>{item.name}</Text>
+      <Text style={styles.clienteInfo}>{item.phone}</Text>
+      <Text style={styles.clienteInfo}>{item.address}</Text>
+    </TouchableOpacity>
   );
 
-  if (loading) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+  const renderProductoItem = ({ item, clienteIndex }) => (
+    <TouchableOpacity
+      style={styles.productoItem}
+      onPress={() => agregarProductoACliente(clienteIndex, item)}
+    >
+      <Text style={styles.productoName}>{item.name}</Text>
+      <Text style={styles.productoPrice}>{formatPrice(item.price)}</Text>
+    </TouchableOpacity>
+  );
 
-  const totalPedidos = pedidos.reduce(
-    (sum, pedido) =>
-      sum +
-      pedido.productos.reduce(
-        (total, producto) => total + producto.price * producto.cantidad,
-        0
-      ),
-    0
+  const renderPedidoClienteItem = ({ item, index: clienteIndex }) => (
+    <View style={styles.pedidoClienteItem}>
+      <View style={styles.pedidoClienteHeader}>
+        <View>
+          <Text style={styles.pedidoClienteName}>{item.name}</Text>
+          <Text style={styles.pedidoClienteAddress}>{item.address}</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.eliminarClienteButton}
+          onPress={() => eliminarClienteDePedido(item.id)}
+        >
+          <Text style={styles.eliminarClienteButtonText}>X</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.productosContainer}>
+        {item.productos.map((producto, productoIndex) => (
+          <View
+            key={`${producto.id}-${productoIndex}`}
+            style={styles.pedidoProductoItem}
+          >
+            <View style={styles.productoMainInfo}>
+              <Text style={styles.productoNombre}>{producto.name}</Text>
+              <Text style={styles.productoPrecio}>
+                {formatPrice(producto.price)}
+              </Text>
+            </View>
+            <View style={styles.productoControls}>
+              <TouchableOpacity
+                style={styles.cantidadButton}
+                onPress={() =>
+                  actualizarCantidadProducto(
+                    clienteIndex,
+                    productoIndex,
+                    producto.cantidad - 1
+                  )
+                }
+              >
+                <Text style={styles.cantidadButtonText}>-</Text>
+              </TouchableOpacity>
+              <Text style={styles.cantidadText}>{producto.cantidad}</Text>
+              <TouchableOpacity
+                style={styles.cantidadButton}
+                onPress={() =>
+                  actualizarCantidadProducto(
+                    clienteIndex,
+                    productoIndex,
+                    producto.cantidad + 1
+                  )
+                }
+              >
+                <Text style={styles.cantidadButtonText}>+</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() =>
+                  eliminarProductoDeCliente(clienteIndex, productoIndex)
+                }
+              >
+                <Text style={styles.eliminarProductoButtonText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))}
+      </View>
+
+      <TouchableOpacity
+        style={styles.agregarProductoButton}
+        onPress={() => {
+          setModalType("productos");
+          setModalVisible(true);
+        }}
+      >
+        <Text style={styles.agregarProductoButtonText}>Agregar Producto</Text>
+      </TouchableOpacity>
+    </View>
   );
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-    >
-      <ViewShot ref={viewShotRef} options={{ format: "jpg", quality: 0.9 }}>
-        <View style={styles.headerContainer}>
-          <Text style={[styles.dateHeader, { color: colors.text }]}>
-            {new Date().toLocaleDateString()}
-          </Text>
-          <Text style={[styles.totalHeader, { color: colors.primary }]}>
-            Total: ${totalPedidos.toFixed(2)}
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Text style={styles.title}>Pedidos del Día</Text>
+          <Text style={styles.date}>
+            {new Date().toLocaleDateString("es-CL")}
           </Text>
         </View>
-        <FlatList
-          data={pedidos}
-          renderItem={({ item }) => (
-            <PedidoItem
-              item={item}
-              onVerDetalles={(pedido) => showModal("detallesPedido", pedido)}
-            />
-          )}
-          keyExtractor={(item, index) => index.toString()}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={[styles.emptyText, { color: colors.text }]}>
-                No hay pedidos registrados
-              </Text>
-            </View>
-          }
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[colors.primary]}
-            />
-          }
-        />
-      </ViewShot>
-      <View style={styles.fixedButtonContainer}>
-        <TouchableOpacity
-          style={[styles.fab, { backgroundColor: colors.primary }]}
-          onPress={() => showModal("clientes")}
-        >
-          <Icon name="add" size={24} color={colors.background} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.exportButton, { backgroundColor: colors.primary }]}
-          onPress={captureAndShareImage}
-        >
-          <Icon name="share" size={24} color={colors.background} />
-          <Text style={[styles.exportButtonText, { color: colors.background }]}>
-            Finalizar pedido y compartir
+        <Text style={styles.total}>
+          Total: {formatPrice(calcularTotalPedido())}
+        </Text>
+      </View>
+
+      <FlatList
+        data={pedidoActual.clientes}
+        keyExtractor={(item, index) => `${item.id}-${index}`}
+        renderItem={renderPedidoClienteItem}
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>
+            No hay clientes en el pedido actual
           </Text>
+        }
+        contentContainerStyle={styles.pedidosList}
+      />
+
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => {
+            setModalType("clientes");
+            setModalVisible(true);
+          }}
+        >
+          <Text style={styles.buttonText}>Agregar Cliente</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={finalizarPedido}>
+          <Text style={styles.buttonText}>Finalizar y Compartir Pedido</Text>
         </TouchableOpacity>
       </View>
-      {renderModal()}
+
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalView}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>
+              {modalType === "clientes"
+                ? "Seleccionar Cliente"
+                : "Agregar Producto"}
+            </Text>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setModalVisible(false)}
+            >
+              <Text style={styles.closeButtonText}>X</Text>
+            </TouchableOpacity>
+          </View>
+
+          {modalType === "clientes" && (
+            <View style={styles.modalContent}>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Buscar cliente"
+                value={busqueda}
+                onChangeText={setBusqueda}
+              />
+              <FlatList
+                data={clientes.filter((cliente) =>
+                  cliente.name.toLowerCase().includes(busqueda.toLowerCase())
+                )}
+                keyExtractor={(item) => item.id.toString()}
+                renderItem={renderClienteItem}
+              />
+            </View>
+          )}
+
+          {modalType === "productos" && (
+            <FlatList
+              data={productos}
+              keyExtractor={(item) => item.id.toString()}
+              renderItem={({ item }) =>
+                renderProductoItem({
+                  item,
+                  clienteIndex: pedidoActual.clientes.length - 1,
+                })
+              }
+            />
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -688,236 +415,239 @@ export default function Component() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: "#f5f5f5",
   },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerContainer: {
+  header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    padding: 10,
-  },
-  dateHeader: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  totalHeader: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
     alignItems: "center",
     padding: 20,
+    backgroundColor: "white",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e1e1e1",
   },
-  emptyText: {
-    fontSize: 18,
-    textAlign: "center",
+  headerLeft: {
+    flex: 1,
   },
-  fixedButtonContainer: {
-    position: "absolute",
-    bottom: 20,
-    left: 20,
-    right: 20,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 4,
-  },
-  exportButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 28,
-    elevation: 4,
-  },
-  exportButtonText: {
-    marginLeft: 8,
-    fontSize: 16,
+  title: {
+    fontSize: 24,
     fontWeight: "bold",
   },
-  modalContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+  date: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 4,
   },
-  modalView: {
-    width: "90%",
-    maxHeight: "80%",
-    borderRadius: 20,
-    padding: 20,
-    elevation: 5,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  modalTitle: {
+  total: {
     fontSize: 20,
     fontWeight: "bold",
+    color: "#007AFF",
   },
-  closeButton: {
-    padding: 5,
+  pedidosList: {
+    padding: 16,
   },
-  clienteItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 10,
-    borderBottomWidth: 1,
+  pedidoClienteItem: {
+    backgroundColor: "white",
+    borderRadius: 12,
+    marginBottom: 16,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 10,
-  },
-  clienteInfo: {
-    flex: 1,
-  },
-  clienteName: {
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  clientePhone: {
-    fontSize: 14,
-  },
-  clienteAddress: {
-    fontSize: 14,
-  },
-  productoItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 10,
-    borderBottomWidth: 1,
-  },
-  productoInfo: {
-    flex: 1,
-  },
-  productoName: {
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  productoPrice: {
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  pedidoItem: {
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 10,
-    marginHorizontal: 10,
-  },
-  pedidoHeader: {
+  pedidoClienteHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 5,
-  },
-  pedidoCliente: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  pedidoTotal: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  pedidoFecha: {
-    fontSize: 14,
-    marginBottom: 5,
-  },
-  pedidoDireccion: {
-    fontSize: 14,
-    marginBottom: 5,
-  },
-  pedidoProductos: {
-    fontSize: 14,
-    marginBottom: 5,
-  },
-  productosPreview: {
-    marginLeft: 10,
-  },
-  productoPreview: {
-    fontSize: 12,
-  },
-  paymentMethodContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 10,
-  },
-  paymentMethodButton: {
-    flex: 1,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderRadius: 5,
-    alignItems: "center",
-    marginHorizontal: 2,
-  },
-  paymentMethodButtonActive: {
-    backgroundColor: "rgba(0, 0, 0, 0.1)",
-  },
-  paymentMethodText: {
-    fontSize: 12,
-  },
-  sectionHeader: {
-    padding: 10,
-  },
-  sectionHeaderText: {
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  clienteHeaderContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
+    alignItems: "flex-start",
+    marginBottom: 16,
   },
   pedidoClienteName: {
     fontSize: 18,
     fontWeight: "bold",
   },
-  productoEnPedido: {
+  pedidoClienteAddress: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 4,
+  },
+  eliminarClienteButton: {
+    backgroundColor: "#FF3B30",
+    borderRadius: 15,
+    width: 30,
+    height: 30,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  eliminarClienteButtonText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  productosContainer: {
+    borderTopWidth: 1,
+    borderTopColor: "#e1e1e1",
+    paddingTop: 12,
+  },
+  pedidoProductoItem: {
+    flexDirection: "column",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e1e1e1",
+  },
+  productoMainInfo: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
+    marginBottom: 8,
   },
-  productoEnPedidoName: {
-    flex: 1,
+  productoNombre: {
     fontSize: 16,
+    flex: 1,
   },
-  cantidadContainer: {
+  productoPrecio: {
+    fontSize: 16,
+    fontWeight: "500",
+    minWidth: 80,
+    textAlign: "right",
+  },
+  productoControls: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "flex-end",
   },
-  cantidad: {
-    fontSize: 16,
-    marginHorizontal: 10,
-  },
-  agregarProductoButton: {
-    marginTop: 20,
-    padding: 10,
-    borderRadius: 5,
+  cantidadButton: {
+    backgroundColor: "#f0f0f0",
+    borderRadius: 15,
+    width: 30,
+    height: 30,
+    justifyContent: "center",
     alignItems: "center",
   },
+  cantidadButtonText: {
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  cantidadText: {
+    fontSize: 16,
+    marginHorizontal: 12,
+    minWidth: 24,
+    textAlign: "center",
+  },
+  eliminarProductoButtonText: {
+    color: "#FF3B30",
+    fontSize: 14,
+    marginLeft: 16,
+  },
+  agregarProductoButton: {
+    backgroundColor: "#007AFF",
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+  },
   agregarProductoButtonText: {
+    color: "white",
+    textAlign: "center",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  buttonContainer: {
+    flexDirection: "row",
+    padding: 16,
+    backgroundColor: "white",
+    borderTopWidth: 1,
+    borderTopColor: "#e1e1e1",
+  },
+  button: {
+    flex: 1,
+    backgroundColor: "#007AFF",
+    borderRadius: 8,
+    padding: 12,
+    marginHorizontal: 4,
+  },
+  buttonText: {
+    color: "white",
+    textAlign: "center",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  modalView: {
+    flex: 1,
+    backgroundColor: "white",
+    marginTop: 50,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e1e1e1",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  closeButton: {
+    padding: 8,
+  },
+  closeButtonText: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#666",
+  },
+  modalContent: {
+    flex: 1,
+    padding: 16,
+  },
+  searchInput: {
+    backgroundColor: "#f0f0f0",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    fontSize: 16,
+  },
+  clienteItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e1e1e1",
+  },
+  clienteName: {
     fontSize: 16,
     fontWeight: "bold",
+    marginBottom: 4,
+  },
+  clienteInfo: {
+    fontSize: 14,
+    color: "#666",
+  },
+  productoItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e1e1e1",
+  },
+  productoName: {
+    fontSize: 16,
+    flex: 1,
+  },
+  productoPrice: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginLeft: 8,
+  },
+  emptyText: {
+    textAlign: "center",
+    fontSize: 16,
+    color: "#666",
+    marginTop: 32,
   },
 });

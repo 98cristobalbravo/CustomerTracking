@@ -35,32 +35,31 @@ const pedidosStyles = StyleSheet.create({
   },
   fixedButtonContainer: {
     position: "absolute",
-    bottom: 20,
-    left: 20,
-    right: 20,
-    flexDirection: "row",
-    justifyContent: "space-between",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#e0e0e0",
   },
-  fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  button: {
+    flexDirection: "row",
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
-    elevation: 4,
-  },
-  exportButton: {
-    flexDirection: "row",
-    alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 28,
-    elevation: 4,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginBottom: 10,
   },
-  exportButtonText: {
+  buttonText: {
     marginLeft: 8,
     fontSize: 16,
     fontWeight: "bold",
+  },
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
   },
   modalContainer: {
     flex: 1,
@@ -169,22 +168,12 @@ const pedidosStyles = StyleSheet.create({
   productoPreview: {
     fontSize: 12,
   },
-  paymentMethodContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 10,
-  },
   paymentMethodButton: {
-    flex: 1,
     paddingVertical: 5,
     paddingHorizontal: 10,
-    borderWidth: 1,
     borderRadius: 5,
     alignItems: "center",
-    marginHorizontal: 2,
-  },
-  paymentMethodButtonActive: {
-    backgroundColor: "rgba(0, 0, 0, 0.1)",
+    marginTop: 10,
   },
   paymentMethodText: {
     fontSize: 12,
@@ -234,6 +223,12 @@ const pedidosStyles = StyleSheet.create({
   agregarProductoButtonText: {
     fontSize: 16,
     fontWeight: "bold",
+  },
+  pedidosListContainer: {
+    flex: 1,
+  },
+  contentContainer: {
+    flexGrow: 1,
   },
 });
 
